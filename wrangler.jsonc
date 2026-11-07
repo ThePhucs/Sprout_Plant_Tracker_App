@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sprout",
+  "main": "./worker/index.ts",
+  // Pinned: Cloudflare keeps this runtime behaviour forever, so updates can't break the app.
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // Every hour: send reminders to people whose local reminder hour it is (also keeps Supabase awake).
+  "triggers": { "crons": ["0 * * * *"] },
+  "vars": {
+    "SUPABASE_URL": "https://rjiddirzqhikcqhkiyfi.supabase.co",
+    "VAPID_PUBLIC_KEY": "BGL6_ckzIZtXwSvFGkeMvpUx-Jadpw_tdrmnigT1Gqt7UUtUZt9Er38H7cy_Tc4ypdXlCGE3ttcVOrF99vhtsX8",
+    "VAPID_SUBJECT": "https://github.com/ThePhucs/Sprout_Plant_Tracker_App"
+  }
+  // Secrets (set with `npx wrangler secret put NAME`): SUPABASE_SECRET_KEY, VAPID_PRIVATE_KEY
+}
