@@ -2,7 +2,7 @@
 
 A plant-care app for the web: watering reminders by push notification, care logs and a photo journal, in Vietnamese and English. It's a standalone web version of my Android app (Kotlin, Jetpack Compose, Room), built for friends and family on iPhone and Android, and it runs at no cost.
 
-> Status: **push-notification prototype**. Accounts, install flow and daily reminders work; plants and photos come next.
+> Status: plants, care logs and daily watering reminders work. Photos and calendar reminders for older iPhones come next.
 
 ## Stack
 

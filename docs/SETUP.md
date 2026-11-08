@@ -10,7 +10,7 @@ Project: `rjiddirzqhikcqhkiyfi`
    - **Allow new users to sign up**: on
    - **Confirm email**: **off** (there are no real emails; usernames become `name@sprout.local`)
    - **Minimum password length**: 8
-2. **SQL Editor → New query**: paste all of `supabase/migrations/0001_accounts_and_push.sql`, click **Run**.
+2. **SQL Editor → New query**: run each file in `supabase/migrations/` in order (`0001_…`, then `0002_…`), one at a time: paste, **Run**, check it says Success.
 3. **Project Settings → API Keys**: you need the **publishable** key (`sb_publishable_…`) and a **secret** key (`sb_secret_…`).
 
 ## 2. Local files on your PC

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LangToggle, useLang } from '../i18n';
 import { iosSupportsPush, iosVersion } from '../lib/platform';
+import { Icon } from '../components/Icon';
 
 export function InstallIOS() {
   const { t } = useLang();
@@ -15,13 +16,14 @@ export function InstallIOS() {
       {v && !iosSupportsPush(ua) && <p className="warn">{t('iosOld', { version: `${v[0]}.${v[1]}` })}</p>}
       <ol className="steps">
         <li>
-          <strong>{t('iosStep1')}</strong> <ShareIcon />
-          <br /><small>{t('iosStep1Hint')}</small>
+          <strong>{t('iosStep1')}</strong>
+          <br /><small>{t('iosStep1Hint')} <ShareIcon /></small>
         </li>
         <li><strong>{t('iosStep2')}</strong></li>
         <li><strong>{t('iosStep3')}</strong></li>
+        <li><strong>{t('iosStep4')}</strong></li>
       </ol>
-      <div className="arrow-down" aria-hidden>↓</div>
+      <div className="arrow-down"><Icon name="down" size={32} /></div>
     </main>
   );
 }

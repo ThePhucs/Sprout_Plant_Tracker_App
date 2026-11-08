@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { buildPushPayload } from '@block65/webcrypto-web-push';
 import { translate, type Lang } from '../shared/i18n';
 import { localHour } from '../shared/time';
+import { todayIn } from '../shared/dates';
+import { plantsDue, reminderContent } from '../shared/plants';
 
 interface Env {
   SUPABASE_URL: string;
@@ -79,12 +81,18 @@ async function hourly(env: Env) {
   const { data: profiles, error } = await db.from('profiles').select('id, username, display_name, language, time_zone, reminder_hour, is_admin, announced');
   if (error) throw new Error(`hourly: could not read profiles: ${error.message}`);
 
-  // Prototype reminder: one daily test push at each person's chosen hour, in their own time zone.
-  // shortcut: replace with the real "plants due today" summary once plants exist.
-  const due = profiles.filter((p) => localHour(now, p.time_zone) === p.reminder_hour);
-  await Promise.all(due.map((p) => sendToUser(env, db, p.id, {
-    title: translate(p.language, 'pushDailyTitle'), body: translate(p.language, 'pushDailyBody'), tag: 'daily',
-  })));
+  // Daily reminder at each person's chosen hour, in their own time zone, only if something needs water.
+  const atHour = profiles.filter((p) => localHour(now, p.time_zone) === p.reminder_hour);
+  if (atHour.length) {
+    const plants = await selectAll<{ user_id: string; name: string; last_watered_at: string; watering_interval_days: number }>(
+      (from, to) => db.from('plants').select('user_id, name, last_watered_at, watering_interval_days')
+        .in('user_id', atHour.map((p) => p.id)).order('id').range(from, to));
+    await Promise.all(atHour.map((p) => {
+      const mine = plants.filter((pl) => pl.user_id === p.id);
+      const content = reminderContent(plantsDue(mine, todayIn(p.time_zone, now)), p.language);
+      return content && sendToUser(env, db, p.id, { ...content, url: '/today', tag: 'daily' });
+    }));
+  }
 
   // Tell admins about new sign-ups so they know who to verify.
   const fresh = profiles.filter((p) => !p.announced);
@@ -97,6 +105,48 @@ async function hourly(env: Env) {
     // Only mark as told once an admin exists, so nobody is missed before you set is_admin.
     if (admins.length) await db.from('profiles').update({ announced: true }).in('id', fresh.map((p) => p.id));
   }
+
+  // Once a week (Monday 02:00 in Vietnam): remove photo files no care log points to.
+  if (now.getUTCDay() === 0 && now.getUTCHours() === 19) await sweepPhotos(db);
+}
+
+/** Supabase returns at most 1000 rows per request, so page through everything. Throws on any error. */
+async function selectAll<T>(page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>) {
+  const rows: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await page(from, from + 999);
+    if (error) throw new Error(`select failed: ${error.message}`);
+    rows.push(...(data as T[]));
+    if (!data || data.length < 1000) return rows;
+  }
+}
+
+/**
+ * Leftovers come from uploads whose log was never saved, deleted logs/plants whose file removal failed,
+ * and deleted accounts. Files younger than a day are skipped (could be mid-upload).
+ */
+async function sweepPhotos(db: SupabaseClient) {
+  const bucket = db.storage.from('photos');
+  // If this read fails it throws, so we never treat "couldn't read" as "nothing to keep".
+  const keep = new Set((await selectAll<{ photo_path: string }>((from, to) =>
+    db.from('care_logs').select('photo_path').not('photo_path', 'is', null).order('id').range(from, to))).map((r) => r.photo_path));
+
+  const { data: folders, error } = await bucket.list('', { limit: 1000 });
+  if (error) throw new Error(`sweep: could not list folders: ${error.message}`);
+  const dayAgo = Date.now() - 86_400_000;
+  const orphans: string[] = [];
+  for (const folder of folders) {
+    for (let offset = 0; ; offset += 1000) {
+      const { data: files, error: listError } = await bucket.list(folder.name, { limit: 1000, offset });
+      if (listError) throw new Error(`sweep: could not list ${folder.name}: ${listError.message}`);
+      for (const f of files) {
+        const path = `${folder.name}/${f.name}`;
+        if (!keep.has(path.replace(/_t\.jpg$/, '.jpg')) && f.created_at && Date.parse(f.created_at) < dayAgo) orphans.push(path);
+      }
+      if (files.length < 1000) break;
+    }
+  }
+  for (let i = 0; i < orphans.length; i += 100) await bucket.remove(orphans.slice(i, i + 100));
 }
 
 export default {

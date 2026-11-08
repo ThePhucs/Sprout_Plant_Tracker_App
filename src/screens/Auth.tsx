@@ -4,6 +4,7 @@ import { LangToggle, useLang } from '../i18n';
 import { supabase } from '../lib/supabase';
 import { isValidUsername, normalizeUsername, usernameToEmail } from '../../shared/username';
 import { ADMIN_MESSENGER } from '../config';
+import { Icon } from '../components/Icon';
 import type { StringKey } from '../../shared/i18n';
 
 export function AuthScreen() {
@@ -89,7 +90,7 @@ export function AuthScreen() {
       </button>
       {mode === 'login' && (
         <p className="muted center">
-          {t('forgot')} <a href={ADMIN_MESSENGER} target="_blank" rel="noreferrer">💬 {t('messageAdmin')}</a>
+          {t('forgot')} <a href={ADMIN_MESSENGER} target="_blank" rel="noreferrer" className="with-icon"><Icon name="message" size={18} />{t('messageAdmin')}</a>
         </p>
       )}
     </main>

@@ -1,14 +1,21 @@
-# Admin tasks
+# Admin guide
 
-Everything happens in the Supabase dashboard. No code or deploy needed.
+Everything here is done in the Supabase dashboard. No code, no deploy.
 
-## Verify someone (30 → 150 photos)
+> The dashboard shows **everyone's** data (it bypasses the app's privacy rules). Only open what a task needs.
 
-**Table Editor → profiles** → find their `username` → tick `verified` → Save.
+## Accounts
 
-To give one person a different limit, type a number in `photo_limit` (empty = 30 or 150 depending on `verified`).
+| Task | Where | How |
+|---|---|---|
+| See who signed up | **Table Editor → profiles** | One row per person: `username`, `display_name`, `created_at` |
+| Verify someone (30 → 150 photos) | **Table Editor → profiles** | Tick `verified`, Save |
+| Give someone a custom photo limit | **Table Editor → profiles** | Type a number in `photo_limit` (empty = 30, or 150 when verified) |
+| Get "new sign-up" notifications | **Table Editor → profiles** | Tick `is_admin` on your own row |
+| Change the account cap (default 30) | **Table Editor → app_settings** | Edit `max_accounts` |
+| Delete an account | **Authentication → Users** | `…` menu → Delete user. Their profile, plants, logs and devices go with it; their photo files are removed by the next weekly clean-up |
 
-## Reset a forgotten password
+### Reset a forgotten password
 
 **SQL Editor**, paste, replace the two values, Run:
 
@@ -18,16 +25,28 @@ set encrypted_password = extensions.crypt('TEMPORARY_PASSWORD', extensions.gen_s
 where email = 'USERNAME@sprout.local';
 ```
 
-It should say "1 row affected". Send them the temporary password on Messenger.
+It should say "1 row affected". Send them the temporary password on Messenger, and ask them to change it in **Cài đặt → Đổi mật khẩu**.
 
-## Change the account limit (default 30)
+## Reminders
 
-**Table Editor → app_settings** → change `max_accounts`.
+| Task | Where | How |
+|---|---|---|
+| Is someone receiving notifications? | **Table Editor → push_subscriptions** | One row per device. `last_success_at` = last push delivered to the push service; `last_error` = why one failed |
+| No row for someone | | They haven't turned on notifications, or their phone dropped the subscription. Opening the app re-registers it |
+| Did the hourly job run? | Cloudflare → **Workers & Pages → sprout → Logs** | Cron runs every hour on the hour |
 
-## See who receives notifications
+## Storage and limits
 
-**Table Editor → push_subscriptions**: one row per device. `last_success_at` shows the last push that arrived at the push service; `last_error` shows why one failed.
+| Task | Where |
+|---|---|
+| How much of the free plan is used (database 500 MB, storage 1 GB, bandwidth) | **Project Settings → Usage** (or the project home page) |
+| Browse photo files | **Storage → photos**: one folder per user id; `name.jpg` (full) + `name_t.jpg` (thumbnail) |
+| Find a user's id | **Table Editor → profiles** → `id` column |
 
-## Remove an account
+Delete photos through the app, not in Storage: deleting a file here leaves the care log pointing at a missing image.
 
-**Authentication → Users** → the user's `…` menu → Delete user. Their profile and devices are deleted with it.
+## Things to know
+
+- **Backups:** the free plan keeps no backups you can restore. To keep a copy, use **Table Editor → (table) → Export → CSV** for `plants`, `care_logs` and `profiles`.
+- **Project pausing:** free projects pause after a week of no activity. The app's hourly job reads the database, so it stays awake. If it ever pauses, click **Restore** on the project page.
+- **Database changes** live in `supabase/migrations/`. Run new files in order in the SQL Editor, once each.

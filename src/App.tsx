@@ -5,13 +5,20 @@ import { isAndroid, isInAppBrowser, isIOS, isStandalone } from './lib/platform';
 import { OpenInBrowser } from './screens/OpenInBrowser';
 import { InstallAndroid, InstallIOS } from './screens/Install';
 import { AuthScreen } from './screens/Auth';
-import { Home } from './screens/Home';
+import { Main } from './screens/Main';
 
 const ua = navigator.userAgent;
 
 export function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [skipInstall, setSkipInstall] = useState(false);
+  // Remember "continue in the browser" so Android users aren't asked on every visit.
+  const [skipInstall, setSkipInstall] = useState(() => {
+    try { return localStorage.getItem('skipInstall') === '1'; } catch { return false; }
+  });
+  const skip = () => {
+    try { localStorage.setItem('skipInstall', '1'); } catch { /* storage blocked */ }
+    setSkipInstall(true);
+  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -23,8 +30,8 @@ export function App() {
   if (isInAppBrowser(ua)) return <OpenInBrowser />;
   // iPhone: the Home Screen app has separate storage from Safari, so log in only inside it.
   if (isIOS(ua, navigator.maxTouchPoints) && !isStandalone()) return <InstallIOS />;
-  if (isAndroid(ua) && !isStandalone() && !skipInstall) return <InstallAndroid onSkip={() => setSkipInstall(true)} />;
+  if (isAndroid(ua) && !isStandalone() && !skipInstall) return <InstallAndroid onSkip={skip} />;
   if (session === undefined) return null; // still reading the saved login
   if (!session) return <AuthScreen />;
-  return <Home session={session} />;
+  return <Main session={session} />;
 }
