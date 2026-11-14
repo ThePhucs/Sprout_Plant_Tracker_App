@@ -50,3 +50,25 @@ Delete photos through the app, not in Storage: deleting a file here leaves the c
 - **Backups:** the free plan keeps no backups you can restore. To keep a copy, use **Table Editor → (table) → Export → CSV** for `plants`, `care_logs` and `profiles`.
 - **Project pausing:** free projects pause after a week of no activity. The app's hourly job reads the database, so it stays awake. If it ever pauses, click **Restore** on the project page.
 - **Database changes** live in `supabase/migrations/`. Run new files in order in the SQL Editor, once each.
+
+## Backups and space alerts (automatic)
+
+Every **Monday 02:00 Vietnam time** the Worker:
+
+1. removes photo files no care log points to,
+2. saves a **data backup** (accounts, plants, care logs, comments, likes) to Cloudflare Workers KV, keeping the **last 8 weeks**,
+3. checks space and **pushes you** if photos or the database pass **80%** of the free plan, or if the backup failed.
+
+Photos themselves are not in the backup (too big for the free KV space).
+
+### Get a backup file
+
+```bash
+npx wrangler kv key list --namespace-id 1bc3b6d8b4f54c25bb5eeaf9b6adf45f --remote
+```
+
+```bash
+npx wrangler kv key get backup-2026-11-09 --namespace-id 1bc3b6d8b4f54c25bb5eeaf9b6adf45f --remote > backup.json
+```
+
+`backup.json` holds every table as JSON. Restoring is a one-off job (insert the rows back with the SQL Editor or a small script); ask for help before doing it.

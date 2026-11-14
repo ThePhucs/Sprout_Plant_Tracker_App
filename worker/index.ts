@@ -11,6 +11,7 @@ interface Env {
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string; // secret
   VAPID_SUBJECT: string;
+  BACKUPS: KVNamespace;
 }
 
 type Sub = { id: number; endpoint: string; p256dh: string; auth: string; user_id: string };
@@ -100,14 +101,96 @@ async function hourly(env: Env) {
     const names = fresh.map((p) => (p.display_name ? `${p.display_name} (${p.username})` : p.username)).join(', ');
     const admins = profiles.filter((p) => p.is_admin);
     await Promise.all(admins.map((a) => sendToUser(env, db, a.id, {
-      title: translate(a.language, 'pushNewUserTitle'), body: translate(a.language, 'pushNewUserBody', { names }), tag: 'signup',
+      title: translate(a.language, 'pushNewUserTitle'), body: translate(a.language, 'pushNewUserBody', { names }), url: '/settings', tag: 'signup',
     })));
     // Only mark as told once an admin exists, so nobody is missed before you set is_admin.
     if (admins.length) await db.from('profiles').update({ announced: true }).in('id', fresh.map((p) => p.id));
   }
 
-  // Once a week (Monday 02:00 in Vietnam): remove photo files no care log points to.
-  if (now.getUTCDay() === 0 && now.getUTCHours() === 19) await sweepPhotos(db);
+  await notifyComments(env, db, profiles);
+}
+
+const GB = 1024 ** 3;
+const FREE = { storage: 1 * GB, db: 0.5 * GB }; // Supabase free plan
+const KEEP_BACKUPS = 8;
+
+/** Sundays 19:00 UTC. Each job runs even if another fails; failures are pushed to admins. */
+async function weekly(env: Env) {
+  const db = admin(env);
+  const { data: profiles } = await db.from('profiles').select('id, language, is_admin');
+  const tellAdmins = (key: 'pushBackupFailed' | 'pushUsageHigh', vars: Record<string, string> = {}) =>
+    Promise.all((profiles ?? []).filter((p) => p.is_admin).map((a) => sendToUser(env, db, a.id, {
+      title: translate(a.language, key, vars), body: '', url: '/settings', tag: key,
+    })));
+
+  try { await sweepPhotos(db); } catch (e) { console.error('photo sweep failed', e); }
+
+  try {
+    await backup(env, db);
+  } catch (e) {
+    console.error('backup failed', e);
+    await tellAdmins('pushBackupFailed');
+  }
+
+  const { data: usage } = await db.rpc('admin_usage');
+  if (usage) {
+    const storage = usage.storage_bytes / FREE.storage, dbUse = usage.db_bytes / FREE.db;
+    if (storage >= 0.8 || dbUse >= 0.8) {
+      await tellAdmins('pushUsageHigh', { storage: String(Math.round(storage * 100)), db: String(Math.round(dbUse * 100)) });
+    }
+  }
+}
+
+/** Copies every table's rows to KV as one JSON file per week (photos stay in Supabase; too big for free KV). */
+async function backup(env: Env, db: SupabaseClient) {
+  const tables = ['profiles', 'plants', 'care_logs', 'comments', 'likes', 'app_settings'] as const;
+  const data: Record<string, unknown[]> = {};
+  for (const t of tables) {
+    // A stable order so paging can't skip or repeat rows (likes have no id column).
+    const key = t === 'likes' ? 'log_id' : 'id';
+    data[t] = await selectAll((from, to) => db.from(t).select('*').order(key).range(from, to));
+  }
+  const name = `backup-${new Date().toISOString().slice(0, 10)}`;
+  await env.BACKUPS.put(name, JSON.stringify({ created: new Date().toISOString(), data }));
+  const { keys } = await env.BACKUPS.list({ prefix: 'backup-' });
+  const old = keys.map((k) => k.name).sort().slice(0, -KEEP_BACKUPS);
+  await Promise.all(old.map((k) => env.BACKUPS.delete(k)));
+}
+
+type ProfileRow = { id: string; username: string; display_name: string | null; language: Lang };
+
+/** One grouped push per photo owner for comments since the last run (at most hourly). Likes never push. */
+async function notifyComments(env: Env, db: SupabaseClient, profiles: ProfileRow[]) {
+  const { data: fresh, error } = await db.from('comments')
+    .select('id, log_id, user_id, care_logs(user_id, plants(name))').eq('notified', false).order('id').limit(500);
+  if (error) throw new Error(`comments: ${error.message}`);
+  if (!fresh?.length) return;
+
+  type Row = { id: number; log_id: number; user_id: string; care_logs: { user_id: string; plants: { name: string } } | null };
+  const byOwner = new Map<string, Row[]>();
+  for (const c of fresh as unknown as Row[]) {
+    const owner = c.care_logs?.user_id;
+    if (owner && owner !== c.user_id) byOwner.set(owner, [...(byOwner.get(owner) ?? []), c]); // own comments don't notify
+  }
+  const nameOf = (id: string) => {
+    const p = profiles.find((x) => x.id === id);
+    return p?.display_name || p?.username || '?';
+  };
+  await Promise.all([...byOwner].map(([owner, list]) => {
+    const lang = profiles.find((p) => p.id === owner)?.language ?? 'vi';
+    const people = [...new Set(list.map((c) => c.user_id))];
+    const photos = [...new Set(list.map((c) => c.log_id))];
+    const name = nameOf(people[0]);
+    const title = people.length > 1
+      ? translate(lang, 'pushCommentMany', { name, n: String(people.length - 1) })
+      : photos.length > 1
+        ? translate(lang, 'pushCommentPhotos', { name, n: String(photos.length) })
+        : translate(lang, 'pushCommentOne', { name, plant: list[0].care_logs!.plants.name });
+    // One photo: open it directly. Several: open the shared garden.
+    const url = photos.length === 1 ? `/photos/${photos[0]}` : '/garden';
+    return sendToUser(env, db, owner, { title, body: '', url, tag: 'comments' });
+  }));
+  await db.from('comments').update({ notified: true }).in('id', fresh.map((c) => c.id));
 }
 
 /** Supabase returns at most 1000 rows per request, so page through everything. Throws on any error. */
@@ -155,7 +238,7 @@ export default {
     if (pathname === '/api/test-push' && req.method === 'POST') return testPush(req, env);
     return Response.json({ error: 'not found' }, { status: 404 });
   },
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(hourly(env));
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(controller.cron === '0 19 * * SUN' ? weekly(env) : hourly(env));
   },
 } satisfies ExportedHandler<Env>;

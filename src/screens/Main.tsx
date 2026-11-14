@@ -12,6 +12,9 @@ import { Plants } from './Plants';
 import { PlantDetail } from './PlantDetail';
 import { PlantEdit } from './PlantEdit';
 import { Settings, type SaveProfile } from './Settings';
+import { Garden } from './Garden';
+import { PhotoPost } from './PhotoPost';
+import { MeContext } from '../lib/me';
 
 export function Main({ session }: { session: Session }) {
   const { setLang } = useLang();
@@ -42,20 +45,24 @@ export function Main({ session }: { session: Session }) {
   if (path === '/plants') screen = <Plants />;
   else if (path === '/plants/new') screen = <PlantEdit key="new" />;
   else if (plantMatch) screen = plantMatch[2] ? <PlantEdit key={path} id={Number(plantMatch[1])} /> : <PlantDetail key={path} id={Number(plantMatch[1])} />;
+  else if (path === '/garden') screen = <Garden />;
+  else if (/^\/photos\/\d+$/.test(path)) screen = <PhotoPost key={path} id={Number(path.split('/')[2])} />;
   else if (path === '/settings') screen = <Settings session={session} profile={profile} saveProfile={saveProfile} />;
   else screen = <Today name={profile.display_name || profile.username} />;
 
-  const tab = path.startsWith('/plants') ? 'plants' : path === '/settings' ? 'settings' : 'today';
+  const tab = path.startsWith('/plants') ? 'plants' : path === '/garden' || path.startsWith('/photos') ? 'garden' : path === '/settings' ? 'settings' : 'today';
 
   return (
+    <MeContext.Provider value={{ id: session.user.id, verified: profile.verified }}>
     <ToastProvider>
       <ConfirmProvider>
-        <PlantsProvider>
+        <PlantsProvider userId={session.user.id}>
           <main className="screen with-tabs">{screen}</main>
           <TabBar current={tab} />
         </PlantsProvider>
       </ConfirmProvider>
     </ToastProvider>
+    </MeContext.Provider>
   );
 }
 
@@ -64,6 +71,7 @@ function TabBar({ current }: { current: string }) {
   const tabs = [
     ['today', '/today', 'calendar', t('tabToday')],
     ['plants', '/plants', 'sprout', t('tabPlants')],
+    ['garden', '/garden', 'garden', t('tabGarden')],
     ['settings', '/settings', 'settings', t('tabSettings')],
   ] as const;
   return (

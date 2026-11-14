@@ -5,25 +5,36 @@ import { removePhotos, uploadPhoto } from '../lib/photos';
 import { goBack, navigate } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { Icon } from '../components/Icon';
-import { Photo, PhotoPicker, PhotoViewer, type PickedPhoto } from '../components/Photo';
+import { Photo, PhotoPicker, type PickedPhoto } from '../components/Photo';
+import { supabase } from '../lib/supabase';
+import { useMemberNames } from '../lib/social';
 import { PlantAvatar } from '../components/PlantAvatar';
 import { StatusChip, WaterButton } from '../components/PlantBits';
 import { useConfirm } from '../components/Confirm';
 import { formatDate } from '../../shared/dates';
-import { CARE_TYPES, daysUntilWatering, nextWatering, type CareLog, type CareType } from '../../shared/plants';
+import { CARE_TYPES, daysUntilWatering, nextWatering, type CareLog, type CareType, type Plant } from '../../shared/plants';
 
 export function PlantDetail({ id }: { id: number }) {
   const { t, lang } = useLang();
-  const { plants, status, today, coverOf, addLog, deleteLog, deletePhoto, setCover, loadLogs, loadPhotos } = usePlants();
+  const { plants, status, today, coverOf, addLog, deleteLog, loadLogs, loadPhotos } = usePlants();
   const toast = useToast();
   const confirm = useConfirm();
-  const plant = plants.find((p) => p.id === id);
+  const names = useMemberNames();
+  const own = plants.find((p) => p.id === id);
+  // Someone else's shared plant: readable (database rules allow it), never editable here.
+  const [other, setOther] = useState<Plant | null | undefined>(undefined);
+  useEffect(() => {
+    if (status === 'ready' && !own) {
+      supabase.from('plants').select('*').eq('id', id).maybeSingle<Plant>().then(({ data }) => setOther(data));
+    }
+  }, [status, own, id]);
+  const plant = own ?? other ?? undefined;
+  const readOnly = !own;
   const [tab, setTab] = useState<'history' | 'photos'>('history');
   const [logs, setLogs] = useState<CareLog[] | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [photos, setPhotos] = useState<CareLog[] | null>(null);
   const [logging, setLogging] = useState<CareType | null>(null); // open form, preset to this care type
-  const [viewing, setViewing] = useState<CareLog | null>(null);
 
   // Back to the newest page (after adding/removing an entry, or the plant changed elsewhere).
   const refreshLogs = async () => {
@@ -44,7 +55,7 @@ export function PlantDetail({ id }: { id: number }) {
   useEffect(() => { refreshLogs(); }, [id, plant?.last_watered_at]);
 
   if (!plant) {
-    return status === 'loading' ? null : (
+    return status === 'loading' || (!own && other === undefined) ? null : (
       <>
         <BackButton />
         <p className="card">{t('plantNotFound')}</p>
@@ -54,7 +65,7 @@ export function PlantDetail({ id }: { id: number }) {
 
   const fmt = (d: string) => formatDate(d, lang, today);
   const careLabel = (type: CareType) => t(`care${type}`);
-  const cover = coverOf(plant);
+  const cover = own ? coverOf(own) : plant.cover_photo_path || photos?.[0]?.photo_path || null;
 
   const removeLog = async (log: CareLog) => {
     if (!(await confirm(t('confirmDeleteLog', { type: careLabel(log.type), date: fmt(log.date) }), t('delete')))) return;
@@ -68,12 +79,14 @@ export function PlantDetail({ id }: { id: number }) {
 
   return (
     <>
-      <BackButton />
+      <BackButton fallback={readOnly ? '/garden' : '/plants'} />
       <header className="detail-head">
         <PlantAvatar icon={plant.icon} color={plant.color} photo={cover} size={72} />
         <div>
           <h1>{plant.name}</h1>
           {plant.species && <p className="muted">{plant.species}</p>}
+          {readOnly && plant.user_id && <p className="muted">{t('ownerOf', { name: names[plant.user_id] ?? t('someone') })}</p>}
+          {!readOnly && plant.shared && <span className="status chip-soon">{t('sharedBadge')}</span>}
         </div>
       </header>
 
@@ -90,7 +103,7 @@ export function PlantDetail({ id }: { id: number }) {
         {plant.notes && <p className="notes">{plant.notes}</p>}
       </section>
 
-      {logging ? (
+      {readOnly ? null : logging ? (
         <LogCareForm
           today={today}
           initialType={logging}
@@ -121,7 +134,7 @@ export function PlantDetail({ id }: { id: number }) {
 
       {tab === 'photos' ? (
         <section className="photos">
-          {!logging && (
+          {!logging && !readOnly && (
             <button className="button secondary" onClick={() => setLogging('PHOTO')}>
               <Icon name="plus" size={18} /> {t('photoTabAdd')}
             </button>
@@ -130,7 +143,7 @@ export function PlantDetail({ id }: { id: number }) {
           <ul className="gallery">
             {photos?.map((log) => (
               <li key={log.id}>
-                <button onClick={() => setViewing(log)} aria-label={`${careLabel(log.type)} ${fmt(log.date)}`}>
+                <button onClick={() => navigate(`/photos/${log.id}`)} aria-label={`${careLabel(log.type)} ${fmt(log.date)}`}>
                   <Photo path={log.photo_path!} thumb alt="" className="gallery-img" />
                   <span className="gallery-date">{fmt(log.date)}</span>
                 </button>
@@ -150,12 +163,12 @@ export function PlantDetail({ id }: { id: number }) {
                 {log.note && <p>{log.note}</p>}
                 {/* Under the text, away from the delete button, so a tap on the photo can't hit delete. */}
                 {log.photo_path && (
-                  <button className="history-photo" onClick={() => setViewing(log)} aria-label={`${careLabel(log.type)} ${fmt(log.date)}`}>
+                  <button className="history-photo" onClick={() => navigate(`/photos/${log.id}`)} aria-label={`${careLabel(log.type)} ${fmt(log.date)}`}>
                     <Photo path={log.photo_path} thumb alt="" className="thumb" />
                   </button>
                 )}
               </div>
-              <button className="icon-btn" onClick={() => removeLog(log)} aria-label={t('removeEntry')}><Icon name="close" size={18} /></button>
+              {!readOnly && <button className="icon-btn" onClick={() => removeLog(log)} aria-label={t('removeEntry')}><Icon name="close" size={18} /></button>}
             </li>
           ))}
         </ul>
@@ -163,37 +176,6 @@ export function PlantDetail({ id }: { id: number }) {
       </section>
       )}
 
-      {viewing?.photo_path && (
-        <PhotoViewer
-          path={viewing.photo_path}
-          alt={`${plant.name}, ${fmt(viewing.date)}`}
-          onClose={() => setViewing(null)}
-          actions={<>
-            {viewing.photo_path !== cover && (
-              <button className="button secondary" onClick={async () => {
-                try {
-                  await setCover(plant.id, viewing.photo_path);
-                  toast({ message: t('coverSet') });
-                } catch {
-                  toast({ message: t('errSave') });
-                }
-                setViewing(null);
-              }}>{t('setCover')}</button>
-            )}
-            <button className="button quiet-danger" onClick={async () => {
-              if (!(await confirm(t('confirmDeletePhoto'), t('deletePhoto')))) return;
-              try {
-                await deletePhoto(viewing);
-                toast({ message: t('photoDeleted') });
-                await refreshLogs();
-              } catch {
-                toast({ message: t('errSave') });
-              }
-              setViewing(null);
-            }}>{t('deletePhoto')}</button>
-          </>}
-        />
-      )}
     </>
   );
 }
@@ -207,9 +189,9 @@ function Info({ label, children }: { label: React.ReactNode; children: React.Rea
   );
 }
 
-function BackButton() {
+function BackButton({ fallback = '/plants' }: { fallback?: string }) {
   const { t } = useLang();
-  return <button className="link back" onClick={() => goBack('/plants')}><Icon name="back" size={18} />{t('back')}</button>;
+  return <button className="link back" onClick={() => goBack(fallback)}><Icon name="back" size={18} />{t('back')}</button>;
 }
 
 function LogCareForm({ today, initialType, onSave, onCancel }: {

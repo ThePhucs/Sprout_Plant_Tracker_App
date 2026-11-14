@@ -4,6 +4,7 @@ import { usePlants, type PlantInput } from '../lib/plants';
 import { goBack, navigate } from '../lib/router';
 import { useToast } from '../components/Toast';
 import { useConfirm } from '../components/Confirm';
+import { useMe } from '../lib/me';
 import { Icon } from '../components/Icon';
 import { PlantAvatar, PlantGlyph } from '../components/PlantAvatar';
 import { PhotoPicker, type PickedPhoto } from '../components/Photo';
@@ -27,13 +28,14 @@ function PlantForm({ existing }: { existing?: Plant }) {
   const toast = useToast();
   const [form, setForm] = useState<PlantInput>(() => existing ?? {
     name: '', species: '', location: '', light_level: 'MEDIUM', watering_interval_days: 7,
-    last_watered_at: today, notes: '', icon: 'SEEDLING', color: 'GREEN',
+    last_watered_at: today, notes: '', icon: 'SEEDLING', color: 'GREEN', shared: false,
   });
   const [errors, setErrors] = useState<Partial<Record<PlantField, ValidationError>>>({});
   const [busy, setBusy] = useState(false);
   const [photo, setPhoto] = useState<PickedPhoto | null>(null); // new plants only
   const [more, setMore] = useState(!!existing); // "More details" open when editing
   const confirm = useConfirm();
+  const me = useMe();
 
   const set = <K extends keyof PlantInput>(k: K, v: PlantInput[K]) => setForm((f) => ({ ...f, [k]: v }));
   const errText = (f: PlantField, max?: number) => {
@@ -60,6 +62,7 @@ function PlantForm({ existing }: { existing?: Plant }) {
       location: form.location.trim(),
       notes: form.notes?.trim() || null,
       last_watered_at: form.last_watered_at > today ? today : form.last_watered_at,
+      shared: !!form.shared && me.verified,
     };
     setBusy(true);
     try {
@@ -136,6 +139,14 @@ function PlantForm({ existing }: { existing?: Plant }) {
           </div>
           {errText('watering_interval_days')}
         </div>
+        <label className="switch-row">
+          <span>
+            <strong>{t('shareLabel')}</strong>
+            <small className="muted">{me.verified ? t('shareHint') : t('shareNeedsVerify')}</small>
+          </span>
+          <input type="checkbox" role="switch" className="switch" checked={!!form.shared} disabled={!me.verified}
+            onChange={(e) => set('shared', e.target.checked)} />
+        </label>
       </section>
 
       {/* A photo already shows the plant, so icon and colour only matter without one. */}

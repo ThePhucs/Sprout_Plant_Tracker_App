@@ -37,7 +37,7 @@ function must<T>({ data, error }: { data: T | null; error: unknown }): T {
   return data as T;
 }
 
-export function PlantsProvider({ children }: { children: ReactNode }) {
+export function PlantsProvider({ userId, children }: { userId: string; children: ReactNode }) {
   const [plants, setPlants] = useState<Plant[]>([]);
   const [latestPhoto, setLatestPhoto] = useState<Record<number, string>>({});
   const [status, setStatus] = useState<Ctx['status']>('loading');
@@ -45,8 +45,8 @@ export function PlantsProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback(async () => {
     const [p, photos] = await Promise.all([
-      supabase.from('plants').select('*').order('name'),
-      supabase.from('care_logs').select('plant_id, photo_path').not('photo_path', 'is', null)
+      supabase.from('plants').select('*').eq('user_id', userId).order('name'), // others' shared plants are readable too
+      supabase.from('care_logs').select('plant_id, photo_path').eq('user_id', userId).not('photo_path', 'is', null)
         .order('date', { ascending: false }).order('id', { ascending: false }),
     ]);
     if (p.error) return setStatus((s) => (s === 'ready' ? s : 'error')); // keep showing old data if we had it
@@ -55,7 +55,7 @@ export function PlantsProvider({ children }: { children: ReactNode }) {
     for (const row of photos.data ?? []) latest[row.plant_id] ??= row.photo_path;
     setLatestPhoto(latest);
     setStatus('ready');
-  }, []);
+  }, [userId]);
 
   useEffect(() => {
     reload();

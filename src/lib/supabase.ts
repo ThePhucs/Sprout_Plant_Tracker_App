@@ -16,4 +16,5 @@ export type Profile = {
   reminder_hour: number;
   verified: boolean;
   photo_limit: number | null;
+  is_admin: boolean;
 };

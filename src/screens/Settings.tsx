@@ -12,6 +12,7 @@ import { photoUsage, type PhotoUsage } from '../lib/photos';
 import { getThemePref, setThemePref, type ThemePref } from '../lib/theme';
 import { usernameToEmail } from '../../shared/username';
 import { useConfirm } from '../components/Confirm';
+import { useToast } from '../components/Toast';
 
 /** Asks for the current password first, so someone holding an unlocked phone can't change it. */
 function ChangePassword({ username }: { username: string }) {
@@ -80,6 +81,61 @@ function ChangePassword({ username }: { username: string }) {
   );
 }
 
+type Member = { id: string; username: string; display_name: string | null; verified: boolean; created_at: string };
+
+const MEMBERS_PAGE = 5; // the list is sorted unverified-first, so waiting people are always in the first page
+
+/** Verify people from the phone: new, unverified sign-ups first. */
+function Members() {
+  const { t, lang } = useLang();
+  const toast = useToast();
+  const [members, setMembers] = useState<Member[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [shown, setShown] = useState(MEMBERS_PAGE);
+  const load = () => supabase.rpc('admin_members').then(({ data }) => setMembers(data ?? []));
+  useEffect(() => { load(); }, []);
+
+  const setVerified = async (m: Member, value: boolean) => {
+    setBusy(m.id);
+    const { error } = await supabase.rpc('admin_set_verified', { member: m.id, value });
+    setBusy(null);
+    if (error) return toast({ message: t('errSave') });
+    toast({ message: value ? t('memberVerified', { name: m.display_name || m.username }) : t('memberUnverified') });
+    load();
+  };
+
+  if (!members) return null;
+  const pending = members.filter((m) => !m.verified).length;
+  // Folded away by default: one row that says how many people are waiting.
+  return (
+    <details className="card more">
+      <summary>
+        {t('members')} · {pending ? <span className="pending">{t('waitingCount', { n: String(pending) })}</span> : members.length}
+      </summary>
+      <ul className="members">
+        {members.slice(0, shown).map((m) => (
+          <li key={m.id}>
+            <div>
+              <strong>{m.display_name || m.username}</strong>
+              <small className="muted">
+                @{m.username} · {t('joined', { date: new Date(m.created_at).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US') })}
+              </small>
+            </div>
+            {m.verified ? (
+              <button className="link" disabled={busy === m.id} onClick={() => setVerified(m, false)}>{t('unverify')}</button>
+            ) : (
+              <button className="button small" disabled={busy === m.id} onClick={() => setVerified(m, true)}>{t('verify')}</button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {shown < members.length && (
+        <button className="button secondary" onClick={() => setShown(shown + MEMBERS_PAGE)}>{t('showMore')}</button>
+      )}
+    </details>
+  );
+}
+
 export type SaveProfile = (patch: Partial<Pick<Profile, 'display_name' | 'language' | 'time_zone' | 'reminder_hour'>>) => Promise<boolean>;
 
 /** Empty clears it: the app then greets them by username. */
@@ -139,6 +195,8 @@ export function Settings({ session, profile, saveProfile }: { session: Session; 
   return (
     <>
       <h1>{t('tabSettings')}</h1>
+      {/* Admins only; the database also refuses everyone else. */}
+      {profile.is_admin && <Members />}
 
       <Notifications accessToken={session.access_token} />
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLang } from '../i18n';
 import { compressPhoto, photoUsage, thumbPath, usePhotoUrl } from '../lib/photos';
 import { ADMIN_MESSENGER } from '../config';
@@ -56,25 +56,6 @@ export function Photo({ path, thumb, alt, className }: { path: string; thumb?: b
     // crossOrigin lets the service worker cache it (no-cors responses can't be cached properly).
     ? <img src={url} alt={alt} className={className} crossOrigin="anonymous" loading="lazy" decoding="async" />
     : <span className={`${className ?? ''} photo-placeholder`} aria-hidden="true" />;
-}
-
-/** Full-screen view of one photo. */
-export function PhotoViewer({ path, alt, onClose, actions }: {
-  path: string; alt: string; onClose: () => void; actions?: React.ReactNode;
-}) {
-  const { t } = useLang();
-  const ref = useRef<HTMLDialogElement>(null);
-  // <dialog>.showModal needs iOS 15.4+; older Safari just shows it as an overlay.
-  useEffect(() => { const d = ref.current; if (d?.showModal) d.showModal(); else { d?.setAttribute('open', ''); d?.classList.add('viewer-fallback'); } }, []);
-  return (
-    <dialog ref={ref} className="viewer" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
-      <Photo path={path} alt={alt} className="viewer-img" />
-      <div className="viewer-bar">
-        {actions}
-        <button className="button" onClick={onClose}>{t('close')}</button>
-      </div>
-    </dialog>
-  );
 }
 
 /** "Almost full" / "full" note with the way to get more. Nothing when there's plenty of room. */

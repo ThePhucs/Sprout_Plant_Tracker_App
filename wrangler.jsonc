@@ -11,8 +11,11 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
-  // Every hour: send reminders to people whose local reminder hour it is (also keeps Supabase awake).
-  "triggers": { "crons": ["0 * * * *"] },
+  // Every hour: reminders, comment pushes (also keeps Supabase awake).
+  // Sundays 19:00 UTC (Monday 02:00 Vietnam): photo clean-up, data backup, usage alert.
+  "triggers": { "crons": ["0 * * * *", "0 19 * * SUN"] },
+  // Weekly data backups (free Workers KV; the last 8 weeks are kept).
+  "kv_namespaces": [{ "binding": "BACKUPS", "id": "1bc3b6d8b4f54c25bb5eeaf9b6adf45f" }],
   "vars": {
     "SUPABASE_URL": "https://rjiddirzqhikcqhkiyfi.supabase.co",
     "VAPID_PUBLIC_KEY": "BGL6_ckzIZtXwSvFGkeMvpUx-Jadpw_tdrmnigT1Gqt7UUtUZt9Er38H7cy_Tc4ypdXlCGE3ttcVOrF99vhtsX8",

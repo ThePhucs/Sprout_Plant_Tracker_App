@@ -24,6 +24,9 @@ export type Plant = {
   color: PlantColor;
   /** Pinned cover photo; when empty the app shows the latest photo. */
   cover_photo_path?: string | null;
+  /** Visible to all verified members when on. */
+  shared?: boolean;
+  user_id?: string;
 };
 
 export type CareLog = { id: number; plant_id: number; type: CareType; date: IsoDate; note: string | null; photo_path: string | null };
